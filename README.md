@@ -58,11 +58,11 @@ In the era of **Agentic AI** and **Real-time Services**, standard Kubernetes Rol
 
 ## Key Features / 功能特性
 
-* ** Sub-millisecond Handover (毫秒级接力):** Updates happen at process fork speed.
-* ** Socket Inheritance (Socket 继承):** Seamlessly passes TCP/UDP/Unix listeners to the new version.
-* ** State Relay Protocol (SRP - 状态接力协议):** Uniquely designed for AI Agents to transfer in-memory context (Context Windows, RAG Cache) to the new process via IPC before exiting.
-* **️ Orchestrated Safety (编排式安全):** Built-in **Pre-flight Checks**, **Canary Soaking**, and **Auto-Rollback**.
-* ** Polyglot Support (多语言支持):** Works with Go, Python (AI-First), Java, Rust, etc.
+* **Sub-millisecond Handover (毫秒级接力):** Updates happen at process fork speed.
+* **Socket Inheritance (Socket 继承):** Seamlessly passes TCP/UDP/Unix listeners to the new version.
+* **State Relay Protocol (SRP - 状态接力协议):** Uniquely designed for AI Agents to transfer in-memory context (Context Windows, RAG Cache) to the new process via IPC before exiting.
+* **️Orchestrated Safety (编排式安全):** Built-in **Pre-flight Checks**, **Canary Soaking**, and **Auto-Rollback**.
+* **Polyglot Support (多语言支持):** Works with Go, Python (AI-First), Java, Rust, etc.
 
 ## Getting Started / 快速开始
 
