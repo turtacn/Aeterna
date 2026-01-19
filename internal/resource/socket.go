@@ -12,9 +12,10 @@ import (
 )
 
 type SocketManager struct {
-	mu       sync.Mutex
-	listener net.Listener
-	file     *os.File
+	mu          sync.Mutex
+	listener    net.Listener
+	file        *os.File
+	currentAddr string
 }
 
 func NewSocketManager() *SocketManager {
@@ -27,7 +28,17 @@ func (sm *SocketManager) EnsureListener(addr string) (net.Listener, error) {
 	defer sm.mu.Unlock()
 
 	if sm.listener != nil {
-		return sm.listener, nil
+		if sm.currentAddr == addr {
+			return sm.listener, nil
+		}
+		// Address changed, close existing
+		sm.listener.Close()
+		if sm.file != nil {
+			sm.file.Close()
+		}
+		sm.listener = nil
+		sm.file = nil
+		sm.currentAddr = ""
 	}
 
 	// 1. Check if we are running as a child process with inherited FDs
@@ -44,6 +55,7 @@ func (sm *SocketManager) EnsureListener(addr string) (net.Listener, error) {
 			}
 			sm.file = f
 			sm.listener = l
+			sm.currentAddr = addr
 			return l, nil
 		}
 	}
@@ -69,6 +81,7 @@ func (sm *SocketManager) EnsureListener(addr string) (net.Listener, error) {
 
 	sm.listener = l
 	sm.file = f
+	sm.currentAddr = addr
 	return l, nil
 }
 
@@ -91,6 +104,7 @@ func (sm *SocketManager) Close() {
 		sm.file.Close()
 		sm.file = nil
 	}
+	sm.currentAddr = ""
 }
 
 // Personal.AI order the ending
