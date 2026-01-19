@@ -44,6 +44,9 @@ func (sm *SocketManager) EnsureListener(addr string) (net.Listener, error) {
 	// 1. Check if we are running as a child process with inherited FDs
 	fds := os.Getenv(consts.EnvInheritedFDs)
 	if fds != "" {
+		// Clear it so we don't try to inherit again if this fails or is called again
+		os.Unsetenv(consts.EnvInheritedFDs)
+
 		count, err := strconv.Atoi(fds)
 		if err == nil && count > 0 {
 			logger.Log.Info("Hot Relay: Inheriting socket from parent", "fds", count)
@@ -51,12 +54,14 @@ func (sm *SocketManager) EnsureListener(addr string) (net.Listener, error) {
 			f := os.NewFile(3, "listener")
 			l, err := net.FileListener(f)
 			if err != nil {
-				return nil, fmt.Errorf("failed to recreate listener from fd: %w", err)
+				// Fallback to cold start if inheritance fails
+				logger.Log.Error("Hot Relay: Failed to inherit socket, falling back to cold start", "err", err)
+			} else {
+				sm.file = f
+				sm.listener = l
+				sm.currentAddr = addr
+				return l, nil
 			}
-			sm.file = f
-			sm.listener = l
-			sm.currentAddr = addr
-			return l, nil
 		}
 	}
 
