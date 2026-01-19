@@ -21,6 +21,10 @@ func NewSocketManager() *SocketManager {
 
 // EnsureListener returns a listener, either inherited from parent or created new
 func (sm *SocketManager) EnsureListener(addr string) (net.Listener, error) {
+	if sm.listener != nil {
+		return sm.listener, nil
+	}
+
 	// 1. Check if we are running as a child process with inherited FDs
 	fds := os.Getenv(consts.EnvInheritedFDs)
 	if fds != "" {
@@ -49,10 +53,12 @@ func (sm *SocketManager) EnsureListener(addr string) (net.Listener, error) {
 	// Get the file descriptor for future inheritance
 	tcpL, ok := l.(*net.TCPListener)
 	if !ok {
+		l.Close()
 		return nil, fmt.Errorf("listener is not a TCP listener")
 	}
 	f, err := tcpL.File()
 	if err != nil {
+		l.Close()
 		return nil, err
 	}
 
