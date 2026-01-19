@@ -5,12 +5,14 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"sync"
 
 	"github.com/turtacn/Aeterna/pkg/consts"
 	"github.com/turtacn/Aeterna/pkg/logger"
 )
 
 type SocketManager struct {
+	mu       sync.Mutex
 	listener net.Listener
 	file     *os.File
 }
@@ -21,6 +23,9 @@ func NewSocketManager() *SocketManager {
 
 // EnsureListener returns a listener, either inherited from parent or created new
 func (sm *SocketManager) EnsureListener(addr string) (net.Listener, error) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
 	if sm.listener != nil {
 		return sm.listener, nil
 	}
@@ -69,15 +74,22 @@ func (sm *SocketManager) EnsureListener(addr string) (net.Listener, error) {
 
 // GetFile returns the file descriptor to pass to child
 func (sm *SocketManager) GetFile() *os.File {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
 	return sm.file
 }
 
 func (sm *SocketManager) Close() {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
 	if sm.listener != nil {
 		sm.listener.Close()
+		sm.listener = nil
 	}
 	if sm.file != nil {
 		sm.file.Close()
+		sm.file = nil
 	}
 }
 
