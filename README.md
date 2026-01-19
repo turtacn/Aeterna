@@ -106,12 +106,8 @@ Replace your binary or script, then run:
 
 ```bash
 aeterna reload
-
 ```
 
-## Contributing / 贡献指南
-
-We welcome contributors! Please see [CONTRIBUTING.md](https://www.google.com/search?q=CONTRIBUTING.md) for details.
 
 ## License / 许可证
 
