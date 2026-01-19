@@ -47,21 +47,35 @@ func (sm *StateMachine) AddTransition(from, to State, event Event, callback Hand
 // Fire triggers a state transition. It is thread-safe.
 func (sm *StateMachine) Fire(event Event, args ...interface{}) error {
 	sm.mu.Lock()
-	defer sm.mu.Unlock()
 
-	next, ok := sm.transitions[sm.current][event]
+	stateTransitions, ok := sm.transitions[sm.current]
 	if !ok {
+		sm.mu.Unlock()
+		return fmt.Errorf("no transitions defined for state %s", sm.current)
+	}
+
+	next, ok := stateTransitions[event]
+	if !ok {
+		sm.mu.Unlock()
 		return fmt.Errorf("invalid transition from %s via %s", sm.current, event)
 	}
 
+	// Capture handler before changing state
+	var handler Handler
+	if handlers, exists := sm.callbacks[sm.current]; exists {
+		handler = handlers[event]
+	}
+
+	sm.current = next
+	sm.mu.Unlock()
+
 	// Execute callback if exists
-	if handler, exists := sm.callbacks[sm.current][event]; exists && handler != nil {
+	if handler != nil {
 		if err := handler(event, args...); err != nil {
 			return err
 		}
 	}
 
-	sm.current = next
 	return nil
 }
 
