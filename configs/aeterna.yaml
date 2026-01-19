@@ -1,0 +1,46 @@
+version: "v1"
+service:
+  name: "ai-agent-core"
+  command:
+    - "python3"
+    - "/app/main.py"
+  env:
+    - "PORT=8080"
+
+orchestration:
+  strategy: "canary"
+
+  # Phase 1: Pre-flight Checks (Defensive)
+  pre_flight:
+    - name: "Config Validation"
+      command: ["python3", "/app/main.py", "--check-config"]
+      timeout: "5s"
+    - name: "Database Schema Check"
+      command: ["/scripts/check_db.sh"]
+
+  # Phase 3: Canary / Soaking
+  canary:
+    enabled: true
+    soak_time: "30s" # Both processes run in parallel
+
+  # Phase 5: Drain
+  drain:
+    timeout: "60s"
+
+  # Phase 6: Post Processing
+  post_process:
+    on_success:
+      - name: "Notify Monitor"
+        command: ["curl", "-X", "POST", "http://monitor/event", "-d", "status=success"]
+
+  # AI Memory Handoff
+  state_handoff:
+    enabled: true
+    socket_path: "/tmp/aeterna_state.sock"
+    timeout: "10s"
+
+observability:
+  metrics_port: ":9091"
+  log_level: "info"
+
+# Personal.AI order the ending
