@@ -13,7 +13,7 @@ type Logger interface {
 	With(args ...any) Logger
 }
 
-var Log Logger
+var Log Logger = &wrapper{l: slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo, AddSource: true}))}
 
 func InitLogger(level string) {
 	var logLevel slog.Level

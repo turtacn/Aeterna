@@ -9,6 +9,7 @@ import (
 	"github.com/turtacn/Aeterna/internal/orchestrator"
 	"github.com/turtacn/Aeterna/pkg/logger"
 	"github.com/turtacn/Aeterna/pkg/protocol"
+	"gopkg.in/yaml.v3"
 )
 
 var cfgFile string
