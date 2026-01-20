@@ -39,7 +39,7 @@
 * **状态接力协议（State Relay Protocol, SRP）：** 定义了一套标准化的进程间通信（IPC）协议，用于易失性状态的序列化与迁移。在旧进程终止前，通过共享内存（Shared Memory）或管道，将关键业务状态（如 AI 上下文向量、Session 缓存）传输至新启动的进程，实现应用层状态的无损继承（State Handover）。
 
 
-## Mission / 核心使命
+## Mission / 主要作用
 
 To democratize **Zero-Downtime In-Place Evolution** for every backend service and AI Agent. Aeterna acts as a universal PID 1 supervisor that manages socket inheritance, state handoff, and canary soaking, ensuring your services evolve without ever dropping a connection or losing context.
 
