@@ -131,22 +131,22 @@ func (sm *SocketManager) addressesMatch(a, b string) bool {
 	return ra.IP.Equal(rb.IP)
 }
 
-func (sm *SocketManager) findListenerLocked(addr string) net.Listener {
+func (sm *SocketManager) findListenerLocked(addr string) (net.Listener, *os.File) {
 	if l, ok := sm.listeners[addr]; ok {
-		return l
+		return l, sm.files[addr]
 	}
 
 	// For random port (0), we never match an existing listener unless it's by exact string key (which is unlikely for :0)
 	if _, port, err := net.SplitHostPort(addr); err == nil && port == "0" {
-		return nil
+		return nil, nil
 	}
 
 	for can, l := range sm.listeners {
 		if sm.addressesMatch(addr, can) {
-			return l
+			return l, sm.files[can]
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 func (sm *SocketManager) findInheritedLocked(addr string) *inheritedSocket {
@@ -173,7 +173,12 @@ func (sm *SocketManager) EnsureListener(addr string) (net.Listener, error) {
 	defer sm.mu.Unlock()
 
 	// 1. Check if we already have it active
-	if l := sm.findListenerLocked(addr); l != nil {
+	if l, f := sm.findListenerLocked(addr); l != nil {
+		// Map this alias for future lookups and inheritance
+		sm.listeners[addr] = l
+		if f != nil {
+			sm.files[addr] = f
+		}
 		return l, nil
 	}
 
@@ -236,11 +241,23 @@ func (sm *SocketManager) GetFiles() []*os.File {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
+	// Ensure we've discovered all inherited sockets so they can be passed down
+	sm.discoverInherited()
+
 	// Use a map to deduplicate files since a listener might be stored under multiple keys
 	uniqueFiles := make(map[uintptr]*os.File)
 	addrMap := make(map[uintptr]string)
 
+	// Include both active files and inherited but unclaimed files
+	allSources := make(map[string]*os.File)
 	for addr, f := range sm.files {
+		allSources[addr] = f
+	}
+	for addr, is := range sm.inherited {
+		allSources[addr] = is.file
+	}
+
+	for addr, f := range allSources {
 		fd := f.Fd()
 		if _, ok := uniqueFiles[fd]; !ok {
 			uniqueFiles[fd] = f
