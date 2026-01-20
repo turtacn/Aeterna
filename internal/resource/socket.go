@@ -65,6 +65,16 @@ func (sm *SocketManager) EnsureListener(addr string) (net.Listener, error) {
 					l.Close()
 					f.Close()
 				} else {
+					// BUG: net.FileListener sets the socket to blocking mode.
+					// We need to set it back to non-blocking for Go runtime poller.
+					if tcpL, ok := l.(*net.TCPListener); ok {
+						if rawConn, err := tcpL.SyscallConn(); err == nil {
+							rawConn.Control(func(fd uintptr) {
+								_ = syscall.SetNonblock(int(fd), true)
+							})
+						}
+					}
+
 					sm.file = f
 					sm.listener = l
 					sm.currentAddr = addr
