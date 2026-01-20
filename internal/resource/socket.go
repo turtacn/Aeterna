@@ -108,13 +108,72 @@ func (sm *SocketManager) discoverInherited() {
 	}
 }
 
+func (sm *SocketManager) addressesMatch(a, b string) bool {
+	if a == b {
+		return true
+	}
+	ra, err1 := net.ResolveTCPAddr("tcp", a)
+	rb, err2 := net.ResolveTCPAddr("tcp", b)
+	if err1 != nil || err2 != nil {
+		return false
+	}
+	if ra.Port != rb.Port {
+		return false
+	}
+
+	isWildcardA := ra.IP == nil || ra.IP.IsUnspecified()
+	isWildcardB := rb.IP == nil || rb.IP.IsUnspecified()
+
+	if isWildcardA && isWildcardB {
+		return true
+	}
+
+	return ra.IP.Equal(rb.IP)
+}
+
+func (sm *SocketManager) findListenerLocked(addr string) net.Listener {
+	if l, ok := sm.listeners[addr]; ok {
+		return l
+	}
+
+	// For random port (0), we never match an existing listener unless it's by exact string key (which is unlikely for :0)
+	if _, port, err := net.SplitHostPort(addr); err == nil && port == "0" {
+		return nil
+	}
+
+	for can, l := range sm.listeners {
+		if sm.addressesMatch(addr, can) {
+			return l
+		}
+	}
+	return nil
+}
+
+func (sm *SocketManager) findInheritedLocked(addr string) *inheritedSocket {
+	if is, ok := sm.inherited[addr]; ok {
+		return is
+	}
+
+	// For random port (0), we can't match an inherited socket by address unless it's exact match
+	if _, port, err := net.SplitHostPort(addr); err == nil && port == "0" {
+		return nil
+	}
+
+	for can, is := range sm.inherited {
+		if sm.addressesMatch(addr, can) {
+			return is
+		}
+	}
+	return nil
+}
+
 // EnsureListener returns a listener, either inherited from parent or created new
 func (sm *SocketManager) EnsureListener(addr string) (net.Listener, error) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
 	// 1. Check if we already have it active
-	if l, ok := sm.listeners[addr]; ok {
+	if l := sm.findListenerLocked(addr); l != nil {
 		return l, nil
 	}
 
@@ -122,11 +181,16 @@ func (sm *SocketManager) EnsureListener(addr string) (net.Listener, error) {
 	sm.discoverInherited()
 
 	// 3. Check if it was inherited
-	if is, ok := sm.inherited[addr]; ok {
-		logger.Log.Info("Hot Relay: Claiming inherited socket", "addr", addr)
+	if is := sm.findInheritedLocked(addr); is != nil {
+		canonicalAddr := is.listener.Addr().String()
+		logger.Log.Info("Hot Relay: Claiming inherited socket", "requested", addr, "canonical", canonicalAddr)
 		sm.listeners[addr] = is.listener
 		sm.files[addr] = is.file
-		delete(sm.inherited, addr)
+		if canonicalAddr != addr {
+			sm.listeners[canonicalAddr] = is.listener
+			sm.files[canonicalAddr] = is.file
+		}
+		delete(sm.inherited, canonicalAddr)
 		return is.listener, nil
 	}
 
@@ -158,6 +222,11 @@ func (sm *SocketManager) EnsureListener(addr string) (net.Listener, error) {
 
 	sm.listeners[addr] = l
 	sm.files[addr] = f
+	canonicalAddr := l.Addr().String()
+	if canonicalAddr != addr {
+		sm.listeners[canonicalAddr] = l
+		sm.files[canonicalAddr] = f
+	}
 	return l, nil
 }
 
@@ -167,16 +236,40 @@ func (sm *SocketManager) GetFiles() []*os.File {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
-	// Get addresses and sort them for determinism
-	addrs := make([]string, 0, len(sm.files))
-	for addr := range sm.files {
-		addrs = append(addrs, addr)
-	}
-	sort.Strings(addrs)
+	// Use a map to deduplicate files since a listener might be stored under multiple keys
+	uniqueFiles := make(map[uintptr]*os.File)
+	addrMap := make(map[uintptr]string)
 
-	files := make([]*os.File, 0, len(sm.files))
-	for _, addr := range addrs {
-		files = append(files, sm.files[addr])
+	for addr, f := range sm.files {
+		fd := f.Fd()
+		if _, ok := uniqueFiles[fd]; !ok {
+			uniqueFiles[fd] = f
+			addrMap[fd] = addr
+		} else {
+			// If we have multiple addresses for the same FD, prefer the canonical one (longer usually)
+			// or just stay consistent. Canonical addresses are often longer e.g. [::]:8080 vs :8080
+			if len(addr) > len(addrMap[fd]) {
+				addrMap[fd] = addr
+			}
+		}
+	}
+
+	// Sort by address for determinism
+	type fileWithAddr struct {
+		f    *os.File
+		addr string
+	}
+	sorted := make([]fileWithAddr, 0, len(uniqueFiles))
+	for fd, f := range uniqueFiles {
+		sorted = append(sorted, fileWithAddr{f, addrMap[fd]})
+	}
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].addr < sorted[j].addr
+	})
+
+	files := make([]*os.File, 0, len(sorted))
+	for _, s := range sorted {
+		files = append(files, s.f)
 	}
 	return files
 }
