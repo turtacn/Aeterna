@@ -61,15 +61,17 @@ func TestSocketManager_InheritanceAddressNormalization(t *testing.T) {
 	os.Setenv(consts.EnvInheritedFDs, "1")
 	defer os.Unsetenv(consts.EnvInheritedFDs)
 
-	// Mock FD 3
-	err = syscall.Dup2(int(f.Fd()), 3)
+	// Mock FD 10
+	testFD := 10
+	err = syscall.Dup2(int(f.Fd()), testFD)
 	if err != nil {
 		t.Fatalf("Failed to dup2: %v", err)
 	}
-	defer syscall.Close(3)
+	defer syscall.Close(testFD)
     f.Close()
 
 	sm := NewSocketManager()
+	sm.baseFD = testFD
 	defer sm.Close()
 
 	// 3. Try to claim it using the requested address string

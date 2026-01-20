@@ -24,6 +24,7 @@ type SocketManager struct {
 	inherited map[string]*inheritedSocket
 
 	discovered bool
+	baseFD     int
 }
 
 type inheritedSocket struct {
@@ -36,6 +37,7 @@ func NewSocketManager() *SocketManager {
 		listeners: make(map[string]net.Listener),
 		files:     make(map[string]*os.File),
 		inherited: make(map[string]*inheritedSocket),
+		baseFD:    3,
 	}
 }
 
@@ -70,8 +72,8 @@ func (sm *SocketManager) discoverInherited() {
 	logger.Log.Info("Hot Relay: Discovering inherited sockets", "count", count)
 
 	for i := 0; i < count; i++ {
-		// ExtraFiles start at fd 3
-		fd := 3 + i
+		// ExtraFiles start at baseFD (usually 3)
+		fd := sm.baseFD + i
 		if !isSocket(uintptr(fd)) {
 			logger.Log.Warn("Hot Relay: FD is not a socket, skipping", "fd", fd)
 			continue

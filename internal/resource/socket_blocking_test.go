@@ -33,22 +33,25 @@ func TestInheritedSocketNonBlocking(t *testing.T) {
 	}
 	defer f.Close()
 
-	// 2. Mock inheritance by setting up FD 3
-	// Save original FD 3 if it exists
-	origFd3, err := syscall.Dup(3)
+	// 2. Mock inheritance by setting up FD 10
+	testFD := 10
+	// Save original FD if it exists
+	origFd, err := syscall.Dup(testFD)
 	hasOrig := err == nil
 	if hasOrig {
 		defer func() {
-			syscall.Dup2(origFd3, 3)
-			syscall.Close(origFd3)
+			syscall.Dup2(origFd, testFD)
+			syscall.Close(origFd)
 		}()
 	}
 
-	err = syscall.Dup2(int(f.Fd()), 3)
+	err = syscall.Dup2(int(f.Fd()), testFD)
 	if err != nil {
 		t.Fatalf("Failed to dup2: %v", err)
 	}
-	defer syscall.Close(3)
+	if !hasOrig {
+		defer syscall.Close(testFD)
+	}
 
 	// Set environment variable
 	os.Setenv(consts.EnvInheritedFDs, "1")
@@ -56,6 +59,7 @@ func TestInheritedSocketNonBlocking(t *testing.T) {
 
 	// 3. Use SocketManager to inherit
 	sm := NewSocketManager()
+	sm.baseFD = testFD
 	inheritedL, err := sm.EnsureListener(l.Addr().String())
 	if err != nil {
 		t.Fatalf("EnsureListener failed: %v", err)
