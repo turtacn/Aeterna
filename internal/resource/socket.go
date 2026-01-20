@@ -13,14 +13,98 @@ import (
 )
 
 type SocketManager struct {
-	mu          sync.Mutex
-	listener    net.Listener
-	file        *os.File
-	currentAddr string
+	mu sync.Mutex
+
+	// Active listeners keyed by address
+	listeners map[string]net.Listener
+	files     map[string]*os.File
+
+	// Inherited but not yet claimed listeners
+	inherited map[string]*inheritedSocket
+
+	discovered bool
+}
+
+type inheritedSocket struct {
+	listener net.Listener
+	file     *os.File
 }
 
 func NewSocketManager() *SocketManager {
-	return &SocketManager{}
+	return &SocketManager{
+		listeners: make(map[string]net.Listener),
+		files:     make(map[string]*os.File),
+		inherited: make(map[string]*inheritedSocket),
+	}
+}
+
+func isSocket(fd uintptr) bool {
+	var stat syscall.Stat_t
+	err := syscall.Fstat(int(fd), &stat)
+	if err != nil {
+		return false
+	}
+	return (stat.Mode & syscall.S_IFMT) == syscall.S_IFSOCK
+}
+
+func (sm *SocketManager) discoverInherited() {
+	if sm.discovered {
+		return
+	}
+	sm.discovered = true
+
+	fds := os.Getenv(consts.EnvInheritedFDs)
+	if fds == "" {
+		return
+	}
+
+	count, err := strconv.Atoi(fds)
+	if err != nil || count <= 0 {
+		return
+	}
+
+	// Clear it so children of this process don't see it unless we set it again
+	os.Unsetenv(consts.EnvInheritedFDs)
+
+	logger.Log.Info("Hot Relay: Discovering inherited sockets", "count", count)
+
+	for i := 0; i < count; i++ {
+		// ExtraFiles start at fd 3
+		fd := 3 + i
+		if !isSocket(uintptr(fd)) {
+			logger.Log.Warn("Hot Relay: FD is not a socket, skipping", "fd", fd)
+			continue
+		}
+
+		f := os.NewFile(uintptr(fd), "listener")
+		if f == nil {
+			continue
+		}
+
+		l, err := net.FileListener(f)
+		if err != nil {
+			logger.Log.Error("Hot Relay: Failed to create listener from FD", "fd", fd, "err", err)
+			// We don't close f here because if it failed, we might not truly "own" this FD
+			// especially in test environments.
+			continue
+		}
+
+		// Ensure non-blocking mode for Go runtime poller
+		if tcpL, ok := l.(*net.TCPListener); ok {
+			if rawConn, err := tcpL.SyscallConn(); err == nil {
+				rawConn.Control(func(fd uintptr) {
+					_ = syscall.SetNonblock(int(fd), true)
+				})
+			}
+		}
+
+		addr := l.Addr().String()
+		sm.inherited[addr] = &inheritedSocket{
+			listener: l,
+			file:     f,
+		}
+		logger.Log.Info("Hot Relay: Discovered inherited socket", "addr", addr, "fd", fd)
+	}
 }
 
 // EnsureListener returns a listener, either inherited from parent or created new
@@ -28,63 +112,24 @@ func (sm *SocketManager) EnsureListener(addr string) (net.Listener, error) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
-	if sm.listener != nil {
-		if sm.currentAddr == addr {
-			return sm.listener, nil
-		}
-		// Address changed, close existing
-		sm.listener.Close()
-		if sm.file != nil {
-			sm.file.Close()
-		}
-		sm.listener = nil
-		sm.file = nil
-		sm.currentAddr = ""
+	// 1. Check if we already have it active
+	if l, ok := sm.listeners[addr]; ok {
+		return l, nil
 	}
 
-	// 1. Check if we are running as a child process with inherited FDs
-	fds := os.Getenv(consts.EnvInheritedFDs)
-	if fds != "" {
-		// Clear it so we don't try to inherit again if this fails or is called again
-		os.Unsetenv(consts.EnvInheritedFDs)
+	// 2. Try to discover inherited sockets if not already done
+	sm.discoverInherited()
 
-		count, err := strconv.Atoi(fds)
-		if err == nil && count > 0 {
-			logger.Log.Info("Hot Relay: Inheriting socket from parent", "fds", count)
-			// ExtraFiles start at fd 3 (0:stdin, 1:stdout, 2:stderr)
-			f := os.NewFile(3, "listener")
-			l, err := net.FileListener(f)
-			if err != nil {
-				// Fallback to cold start if inheritance fails
-				logger.Log.Error("Hot Relay: Failed to inherit socket, falling back to cold start", "err", err)
-				f.Close()
-			} else {
-				// Validate address
-				if l.Addr().String() != addr {
-					logger.Log.Warn("Hot Relay: Inherited socket address mismatch, falling back to cold start", "inherited", l.Addr().String(), "expected", addr)
-					l.Close()
-					f.Close()
-				} else {
-					// BUG: net.FileListener sets the socket to blocking mode.
-					// We need to set it back to non-blocking for Go runtime poller.
-					if tcpL, ok := l.(*net.TCPListener); ok {
-						if rawConn, err := tcpL.SyscallConn(); err == nil {
-							rawConn.Control(func(fd uintptr) {
-								_ = syscall.SetNonblock(int(fd), true)
-							})
-						}
-					}
-
-					sm.file = f
-					sm.listener = l
-					sm.currentAddr = addr
-					return l, nil
-				}
-			}
-		}
+	// 3. Check if it was inherited
+	if is, ok := sm.inherited[addr]; ok {
+		logger.Log.Info("Hot Relay: Claiming inherited socket", "addr", addr)
+		sm.listeners[addr] = is.listener
+		sm.files[addr] = is.file
+		delete(sm.inherited, addr)
+		return is.listener, nil
 	}
 
-	// 2. Cold start
+	// 4. Cold start
 	logger.Log.Info("Cold Start: Binding new listener", "addr", addr)
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -104,39 +149,56 @@ func (sm *SocketManager) EnsureListener(addr string) (net.Listener, error) {
 	}
 
 	// File() sets the socket to blocking mode. We need to set it back to non-blocking
-	// for the Go runtime poller to work correctly.
 	if rawConn, err := tcpL.SyscallConn(); err == nil {
 		rawConn.Control(func(fd uintptr) {
 			_ = syscall.SetNonblock(int(fd), true)
 		})
 	}
 
-	sm.listener = l
-	sm.file = f
-	sm.currentAddr = addr
+	sm.listeners[addr] = l
+	sm.files[addr] = f
 	return l, nil
 }
 
-// GetFile returns the file descriptor to pass to child
-func (sm *SocketManager) GetFile() *os.File {
+// GetFiles returns all managed file descriptors to pass to child
+func (sm *SocketManager) GetFiles() []*os.File {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
-	return sm.file
+
+	files := make([]*os.File, 0, len(sm.files))
+	for _, f := range sm.files {
+		files = append(files, f)
+	}
+	return files
+}
+
+// GetFile is deprecated, use GetFiles
+func (sm *SocketManager) GetFile() *os.File {
+	files := sm.GetFiles()
+	if len(files) > 0 {
+		return files[0]
+	}
+	return nil
 }
 
 func (sm *SocketManager) Close() {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
-	if sm.listener != nil {
-		sm.listener.Close()
-		sm.listener = nil
+	for addr, l := range sm.listeners {
+		l.Close()
+		if f, ok := sm.files[addr]; ok {
+			f.Close()
+		}
 	}
-	if sm.file != nil {
-		sm.file.Close()
-		sm.file = nil
+	sm.listeners = make(map[string]net.Listener)
+	sm.files = make(map[string]*os.File)
+
+	for _, is := range sm.inherited {
+		is.listener.Close()
+		is.file.Close()
 	}
-	sm.currentAddr = ""
+	sm.inherited = make(map[string]*inheritedSocket)
 }
 
 // Personal.AI order the ending

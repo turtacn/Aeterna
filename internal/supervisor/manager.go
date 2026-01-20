@@ -1,6 +1,7 @@
 package supervisor
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"syscall"
@@ -31,7 +32,7 @@ func (pm *ProcessManager) Start(command []string, env []string, extraFiles []*os
 	if len(extraFiles) > 0 {
 		pm.cmd.ExtraFiles = extraFiles
 		// UPHR Core: Notify child about inherited FDs
-		pm.cmd.Env = append(pm.cmd.Env, consts.EnvInheritedFDs+"=1")
+		pm.cmd.Env = append(pm.cmd.Env, fmt.Sprintf("%s=%d", consts.EnvInheritedFDs, len(extraFiles)))
 	}
 
 	logger.Log.Info("Supervisor: Forking process", "cmd", command)
