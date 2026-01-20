@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"syscall"
 
 	"github.com/turtacn/Aeterna/pkg/consts"
 	"github.com/turtacn/Aeterna/pkg/logger"
@@ -56,11 +57,19 @@ func (sm *SocketManager) EnsureListener(addr string) (net.Listener, error) {
 			if err != nil {
 				// Fallback to cold start if inheritance fails
 				logger.Log.Error("Hot Relay: Failed to inherit socket, falling back to cold start", "err", err)
+				f.Close()
 			} else {
-				sm.file = f
-				sm.listener = l
-				sm.currentAddr = addr
-				return l, nil
+				// Validate address
+				if l.Addr().String() != addr {
+					logger.Log.Warn("Hot Relay: Inherited socket address mismatch, falling back to cold start", "inherited", l.Addr().String(), "expected", addr)
+					l.Close()
+					f.Close()
+				} else {
+					sm.file = f
+					sm.listener = l
+					sm.currentAddr = addr
+					return l, nil
+				}
 			}
 		}
 	}
@@ -82,6 +91,14 @@ func (sm *SocketManager) EnsureListener(addr string) (net.Listener, error) {
 	if err != nil {
 		l.Close()
 		return nil, err
+	}
+
+	// File() sets the socket to blocking mode. We need to set it back to non-blocking
+	// for the Go runtime poller to work correctly.
+	if rawConn, err := tcpL.SyscallConn(); err == nil {
+		rawConn.Control(func(fd uintptr) {
+			_ = syscall.SetNonblock(int(fd), true)
+		})
 	}
 
 	sm.listener = l
