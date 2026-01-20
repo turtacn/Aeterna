@@ -89,10 +89,7 @@ func (e *Engine) onStart(event fsm.Event, args ...interface{}) error {
 	}
 
 	// 2. Start Process
-	files := []*os.File{}
-	if f := e.socket.GetFile(); f != nil {
-		files = append(files, f)
-	}
+	files := e.socket.GetFiles()
 
 	err = e.process.Start(e.cfg.Service.Command, e.cfg.Service.Env, files)
 	if err != nil {

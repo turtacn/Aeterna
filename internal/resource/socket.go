@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"sort"
 	"strconv"
 	"sync"
 	"syscall"
@@ -160,14 +161,22 @@ func (sm *SocketManager) EnsureListener(addr string) (net.Listener, error) {
 	return l, nil
 }
 
-// GetFiles returns all managed file descriptors to pass to child
+// GetFiles returns all managed file descriptors to pass to child.
+// The files are returned in a deterministic order (sorted by address).
 func (sm *SocketManager) GetFiles() []*os.File {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
+	// Get addresses and sort them for determinism
+	addrs := make([]string, 0, len(sm.files))
+	for addr := range sm.files {
+		addrs = append(addrs, addr)
+	}
+	sort.Strings(addrs)
+
 	files := make([]*os.File, 0, len(sm.files))
-	for _, f := range sm.files {
-		files = append(files, f)
+	for _, addr := range addrs {
+		files = append(files, sm.files[addr])
 	}
 	return files
 }
