@@ -66,6 +66,8 @@ func init() {
 	rootCmd.AddCommand(reloadCmd)
 }
 
+// Execute runs the root command for the Aeterna CLI.
+// It handles command-line arguments and dispatches to the appropriate subcommands.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println(err)

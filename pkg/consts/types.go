@@ -2,7 +2,7 @@ package consts
 
 import "time"
 
-// AppMode defines the running mode of Aeterna
+// AppMode defines the running mode of Aeterna.
 type AppMode string
 
 const (
@@ -10,8 +10,8 @@ const (
 	ModeHotRelay AppMode = "hot-relay" // Mode allowing in-place updates
 )
 
-// ProcessState defines the detailed lifecycle state of the managed process
-// Based on UPHR-O Architecture
+// ProcessState defines the detailed lifecycle state of the managed process.
+// It is based on the UPHR-O (Universal Process Hot-Relay Orchestration) Architecture.
 type ProcessState string
 
 const (

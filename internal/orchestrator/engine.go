@@ -16,6 +16,9 @@ import (
 	"github.com/turtacn/Aeterna/pkg/protocol"
 )
 
+// Engine is the core orchestrator of Aeterna.
+// It manages the finite state machine, network resources, process lifecycle,
+// and the State Relay Protocol (SRP) for hot reloads.
 type Engine struct {
 	cfg     *protocol.Config
 	fsm     *fsm.StateMachine
@@ -24,6 +27,8 @@ type Engine struct {
 	srp     *srp.StateCoordinator
 }
 
+// NewEngine creates a new Engine instance with the provided configuration.
+// It initializes the state machine, socket manager, process manager, and SRP coordinator.
 func NewEngine(cfg *protocol.Config) *Engine {
 	e := &Engine{
 		cfg:     cfg,
@@ -55,6 +60,9 @@ func (e *Engine) setupFSM() {
 	e.fsm.AddTransition(fsm.State(consts.StateSoaking), fsm.State(consts.StateDraining), "success", e.onDrainOld)
 }
 
+// Start begins the orchestration process.
+// It sets up signal handling for SIGHUP (reload), SIGINT, and SIGTERM (shutdown),
+// and triggers the initial "start" event in the state machine.
 func (e *Engine) Start() error {
 	// Handle OS Signals
 	sigCh := make(chan os.Signal, 1)

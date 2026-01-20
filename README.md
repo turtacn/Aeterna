@@ -69,8 +69,7 @@ In the era of **Agentic AI** and **Real-time Services**, standard Kubernetes Rol
 ### Installation / 安装
 
 ```bash
-go install [github.com/turtacn/Aeterna/cmd/aeterna@latest](https://github.com/turtacn/Aeterna/cmd/aeterna@latest)
-
+go install github.com/turtacn/Aeterna/cmd/aeterna@latest
 ```
 
 ### Basic Usage / 基本使用
@@ -81,31 +80,84 @@ Aeterna 作为容器的入口点运行。
 **1. Configuration (`aeterna.yaml`):**
 
 ```yaml
+version: "1.0"
 service:
   name: "agent-core"
   command: ["python", "agent.py"]
+  env:
+    - "PYTHONUNBUFFERED=1"
 
 orchestration:
-  mode: "hot-relay"
-  soak_time: "30s"      # Soak time for canary observation (浸泡观察时间)
-  state_handoff: true   # Enable memory context transfer (开启状态接力)
+  strategy: "hot-relay"
+  canary:
+    enabled: true
+    soak_time: "30s"    # Soak time for canary observation (浸泡观察时间)
+  state_handoff:
+    enabled: true       # Enable memory context transfer (开启状态接力)
+    socket_path: "/tmp/aeterna_srp.sock"
 
+observability:
+  metrics_port: ":9090"
+  log_level: "info"
 ```
 
 **2. Run / 启动:**
 
 ```bash
 aeterna start -c aeterna.yaml
-
 ```
 
 **3. Trigger Update / 触发升级:**
 
-Replace your binary or script, then run:
-替换二进制文件或脚本后运行：
+To trigger a hot reload, send a `SIGHUP` signal to the Aeterna process:
+要触发热重载，请向 Aeterna 进程发送 `SIGHUP` 信号：
 
 ```bash
-aeterna reload
+kill -HUP $(pgrep aeterna)
+```
+
+## Architecture / 架构
+
+Aeterna operates as a PID 1 supervisor within a container, managing the lifecycle of the underlying business process.
+
+1.  **Phase 1: Pre-flight Checks**: Runs user-defined hooks to ensure the environment is ready for an update.
+2.  **Phase 2: Startup**: Launches the new version of the process.
+3.  **Phase 2.5: SRP Handover**: Facilitates state transfer via the State Relay Protocol.
+4.  **Phase 3: Soaking**: Observes the new process for a specified duration (Canary phase).
+5.  **Phase 5: Drain**: Gracefully shuts down the old process once the new one is confirmed stable.
+
+## Development / 开发
+
+### Prerequisites
+- Go 1.21+
+- Python 3.9+ (for SDK and AI Agent examples)
+
+### Running Tests
+```bash
+go test ./...
+```
+
+### Generating Coverage
+```bash
+go test -coverprofile=coverage.out ./...
+go tool cover -func=coverage.out
+```
+
+## SDK Integration / SDK 集成
+
+### Python (AI Agents)
+```python
+from aeterna import AeternaClient
+
+client = AeternaClient()
+
+# Inherit the listening socket
+listener = client.get_listener_socket()
+
+# Load memory context from the previous process
+context = client.load_context()
+
+# ... Your Agent Logic ...
 ```
 
 

@@ -19,7 +19,15 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s [SDK] %(message)s')
 logger = logging.getLogger("aeterna")
 
 class AeternaClient:
+    """
+    AeternaClient provides helper methods for AI Agents to integrate with the Aeterna supervisor.
+    It handles socket inheritance and state transfer via the State Relay Protocol (SRP).
+    """
+
     def __init__(self):
+        """
+        Initializes the AeternaClient by reading environment variables set by the supervisor.
+        """
         self.state_sock_path = os.getenv(ENV_STATE_SOCK)
         self.inherited_fds_count = int(os.getenv(ENV_INHERITED_FDS, "0"))
 
@@ -80,8 +88,9 @@ class AeternaClient:
         """
         Dumps the current memory context to the SRP coordinator.
         This is usually called by the OLD process before exiting.
-        Note: In the full architecture, the old process pushes to a socket.
-        For this simplified version, we assume Aeterna facilitates the pipe.
+
+        Args:
+            context (Dict[str, Any]): The state data to be transferred to the new process.
         """
         # Actual implementation depends on whether we are pushing or being pulled.
         # This acts as a placeholder for the Agent to serialize its memory.

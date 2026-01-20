@@ -10,15 +10,20 @@ import (
 	"github.com/turtacn/Aeterna/pkg/logger"
 )
 
+// ProcessManager handles the lifecycle of the managed business process.
+// It manages starting, stopping, and waiting for the process.
 type ProcessManager struct {
 	cmd *exec.Cmd
 }
 
+// New creates a new ProcessManager instance.
 func New() *ProcessManager {
 	return &ProcessManager{}
 }
 
-// Start launches the business process
+// Start launches the business process with the given command, environment, and extra files.
+// It sets up standard output and error redirection and communicates inherited
+// file descriptors to the child process via the AETERNA_INHERITED_FDS environment variable.
 func (pm *ProcessManager) Start(command []string, env []string, extraFiles []*os.File) error {
 	if len(command) == 0 {
 		return nil
@@ -39,7 +44,7 @@ func (pm *ProcessManager) Start(command []string, env []string, extraFiles []*os
 	return pm.cmd.Start()
 }
 
-// Stop gracefully terminates the process
+// Stop sends a SIGTERM signal to the managed process to initiate a graceful shutdown.
 func (pm *ProcessManager) Stop() error {
 	if pm.cmd != nil && pm.cmd.Process != nil {
 		logger.Log.Info("Supervisor: Sending SIGTERM", "pid", pm.cmd.Process.Pid)
@@ -48,7 +53,8 @@ func (pm *ProcessManager) Stop() error {
 	return nil
 }
 
-// Kill immediately terminates the process (Used for Rollback)
+// Kill immediately terminates the managed process using a SIGKILL signal.
+// This is typically used during rollbacks if a graceful shutdown fails.
 func (pm *ProcessManager) Kill() error {
 	if pm.cmd != nil && pm.cmd.Process != nil {
 		logger.Log.Warn("Supervisor: Sending SIGKILL (Rollback)", "pid", pm.cmd.Process.Pid)
@@ -57,6 +63,7 @@ func (pm *ProcessManager) Kill() error {
 	return nil
 }
 
+// Wait waits for the managed process to exit and returns the resulting error, if any.
 func (pm *ProcessManager) Wait() error {
 	if pm.cmd != nil {
 		return pm.cmd.Wait()

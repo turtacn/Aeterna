@@ -13,6 +13,9 @@ import (
 	"github.com/turtacn/Aeterna/pkg/logger"
 )
 
+// SocketManager manages network listeners and their corresponding file descriptors.
+// It supports socket inheritance, allowing listeners to be passed from a parent
+// process to a child process during a hot reload.
 type SocketManager struct {
 	mu sync.Mutex
 
@@ -32,6 +35,7 @@ type inheritedSocket struct {
 	file     *os.File
 }
 
+// NewSocketManager creates and initializes a new SocketManager.
 func NewSocketManager() *SocketManager {
 	return &SocketManager{
 		listeners: make(map[string]net.Listener),
@@ -169,7 +173,10 @@ func (sm *SocketManager) findInheritedLocked(addr string) *inheritedSocket {
 	return nil
 }
 
-// EnsureListener returns a listener, either inherited from parent or created new
+// EnsureListener returns a net.Listener for the given address.
+// It first checks if a listener for the address is already active or was inherited
+// from a parent process. If not, it creates a new listener.
+// It returns the listener or an error if one occurred.
 func (sm *SocketManager) EnsureListener(addr string) (net.Listener, error) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
@@ -237,8 +244,9 @@ func (sm *SocketManager) EnsureListener(addr string) (net.Listener, error) {
 	return l, nil
 }
 
-// GetFiles returns all managed file descriptors to pass to child.
-// The files are returned in a deterministic order (sorted by address).
+// GetFiles returns a slice of *os.File representing all managed listeners' file descriptors.
+// This is used to pass file descriptors to a child process. The results are sorted
+// by address for deterministic behavior.
 func (sm *SocketManager) GetFiles() []*os.File {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
@@ -293,7 +301,8 @@ func (sm *SocketManager) GetFiles() []*os.File {
 	return files
 }
 
-// GetFile is deprecated, use GetFiles
+// GetFile returns the first managed file descriptor.
+// Deprecated: use GetFiles instead.
 func (sm *SocketManager) GetFile() *os.File {
 	files := sm.GetFiles()
 	if len(files) > 0 {
@@ -302,6 +311,7 @@ func (sm *SocketManager) GetFile() *os.File {
 	return nil
 }
 
+// Close closes all managed listeners and their associated file descriptors.
 func (sm *SocketManager) Close() {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
