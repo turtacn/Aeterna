@@ -9,9 +9,13 @@
   <p><strong>The Eternal Process Orchestrator for Agentic AI & High-Availability Services</strong></p>
   <p><strong>面向 Agentic AI 与高可用服务的"永恒"进程编排引擎</strong></p>
   
+  
+  
   [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/turtacn/Aeterna/actions)
   [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
   [![Go Report Card](https://goreportcard.com/badge/github.com/turtacn/Aeterna)](https://goreportcard.com/report/github.com/turtacn/Aeterna)
+  
+  [Quick Start](#quick-start) • [Architecture](docs/architecture.md) • [API Docs](docs/apis.md) • [SDK Design](docs/sdk_design.md) 
 </div>
 
 ---
